@@ -42,7 +42,15 @@ case "$cmd" in
       case "$1" in
         --created) field="created"; shift ;;
         --all)     all=1; shift ;;
-        --since)   since="${2%d}"; shift 2 ;;
+        --since)
+          if [[ -z "${2:-}" ]]; then
+            printf -- '--since requires a value, e.g. --since 7d\n' >&2; exit 1
+          fi
+          since="${2%d}"
+          if [[ ! "$since" =~ ^[0-9]+$ ]]; then
+            printf -- '--since expects a number of days, e.g. 7d (got: %s)\n' "$2" >&2; exit 1
+          fi
+          shift 2 ;;
         *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
       esac
     done
@@ -55,13 +63,18 @@ case "$cmd" in
     if [[ "$cmd" == "by-date" ]]; then
       printf '%s' "$enriched" | render_by_date "$field" "$since"
     else
-      run_picker "$enriched" "$field" "$all"
+      run_picker "$enriched" "$field" "$all" "$since"
     fi
     ;;
 
   by-file)
     all=0
-    [[ "${1:-}" == "--all" ]] && all=1
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --all) all=1; shift ;;
+        *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
+      esac
+    done
     if [[ "$all" == "1" ]]; then obs tasks verbose; else obs tasks todo verbose; fi
     ;;
 

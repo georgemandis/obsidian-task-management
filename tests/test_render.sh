@@ -190,6 +190,43 @@ test_picker_survives_empty_string_timestamps() {
   assert_contains "$got" "B.md:2" "picker must still emit a row for an empty-string timestamp"
 }
 
+# --- Finding 1: render_picker must honor --since (the picker was previously
+# showing the FULL list regardless of --since, letting a user toggle a task
+# they explicitly filtered out). ---------------------------------------------
+
+test_render_picker_since_narrows_list() {
+  local got
+  got="$(printf '%s' "$ENRICHED" | OBSIDIAN_TASKS_NOW=1786248000 render_picker modified 7)"
+  if [[ "$got" == *"Draft the proposal"* ]]; then
+    fail "render_picker --since 7 should have excluded a file untouched for months"
+  fi
+  assert_contains "$got" "Chase the invoice" "recent task retained in picker"
+}
+
+test_render_picker_without_since_shows_everything() {
+  local got
+  got="$(printf '%s' "$ENRICHED" | OBSIDIAN_TASKS_NOW=1786248000 render_picker modified "")"
+  assert_contains "$got" "Draft the proposal" "no since filter means nothing is excluded"
+}
+
+# --- Finding 6: a task whose timestamp is unknown (missing/null/empty) must
+# survive --since in BOTH renderers, per README ("appear under Older with a
+# warning" rather than disappearing). -----------------------------------------
+
+test_render_by_date_since_keeps_unknown_timestamp_task() {
+  local e got
+  e='[{"status":" ","text":"UNKNOWNDATE","file":"B.md","line":"2","ref":"B.md:2","created":null,"modified":null}]'
+  got="$(printf '%s' "$e" | OBSIDIAN_TASKS_NOW=1786248000 render_by_date modified 7 2>&1)"
+  assert_contains "$got" "UNKNOWNDATE" "a task with an unknown timestamp must survive --since 7"
+}
+
+test_render_picker_since_keeps_unknown_timestamp_task() {
+  local e got
+  e='[{"status":" ","text":"UNKNOWNDATE","file":"B.md","line":"2","ref":"B.md:2","created":null,"modified":null}]'
+  got="$(printf '%s' "$e" | OBSIDIAN_TASKS_NOW=1786248000 render_picker modified 7 2>&1)"
+  assert_contains "$got" "B.md:2" "picker must still emit a row for an unknown timestamp under --since"
+}
+
 PICKER_ENRICHED='[
   {"status":" ","text":"Chase the invoice","file":"Audit/09 Week-One Action List.md",
    "line":"20","ref":"Audit/09 Week-One Action List.md:20",
@@ -425,6 +462,38 @@ STUB
   assert_contains "$out" "no longer exists" "reported as no-longer-existing, not moved"
   if [[ "$out" == *"DRY RUN"* ]]; then
     fail "a vanished task was toggled instead of skipped: $out"
+  fi
+}
+
+# run_picker must thread `since` through to render_picker so an out-of-window
+# task never even reaches the fzf list (the fzf stub echoes stdin back
+# unmodified, so anything the stub receives is exactly what a real fzf would
+# have offered the user to select).
+test_run_picker_since_excludes_old_task_from_selectable_list() {
+  local enriched fzf_stub fzf_dir out
+  enriched='[
+    {"status":" ","text":"Chase the invoice","file":"Audit/09 Week-One Action List.md",
+     "line":"20","ref":"Audit/09 Week-One Action List.md:20",
+     "created":"1765157522206","modified":"1786290000000"},
+    {"status":" ","text":"Draft the proposal","file":"Projects/Old Idea.md",
+     "line":"3","ref":"Projects/Old Idea.md:3",
+     "created":"1760000000000","modified":"1760000000000"}
+  ]'
+
+  fzf_dir="$(mktemp -d)"
+  fzf_stub="$fzf_dir/fzf"
+  # Echo back the offered list untouched, then select nothing (blank stdout);
+  # we only care what run_picker handed to fzf, not what gets toggled.
+  printf '#!/usr/bin/env bash\ncat >&2\n' > "$fzf_stub"
+  chmod +x "$fzf_stub"
+
+  out="$(PATH="$fzf_dir:$PATH" OBSIDIAN_TASKS_NOW=1786248000 \
+    run_picker "$enriched" modified 0 7 2>&1)"
+  rm -rf "$fzf_dir"
+
+  assert_contains "$out" "Chase the invoice" "recent task offered to fzf"
+  if [[ "$out" == *"Draft the proposal"* ]]; then
+    fail "--since 7 should have kept the stale task out of the fzf-offered list: $out"
   fi
 }
 

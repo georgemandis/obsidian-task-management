@@ -11,6 +11,8 @@ it. This tool gathers them into one view without moving them.
 
 - Obsidian, running, with the CLI enabled
 - `jq`
+- `coreutils` (for `timeout` — macOS ships no `/usr/bin/timeout`; `brew install coreutils`
+  provides it as `timeout` or `gtimeout`, either is detected automatically)
 - `fzf` (optional — `pick` falls back to a numbered prompt)
 
 Runs on bash 3.2 (the macOS system bash) and later.
@@ -61,6 +63,13 @@ Set `OBSIDIAN_TASKS_DRY_RUN=1` to print what would be written without writing it
 The guard sits in the CLI wrapper itself, not just the write helper, so no code
 path can bypass it.
 
+Reconciliation matches on file, line, and task text — it has no stable task ID to
+key on, since the CLI exposes none. If your task moves and a different task with
+identical wording ends up at the old file:line ref, `pick` cannot tell them apart
+and may toggle the wrong one. In practice this requires exact duplicate text in
+the same file, which is rare, but it is a real limitation of text-based
+reconciliation rather than a guarantee this tool makes.
+
 ## Known limitations
 
 - **Active vault only.** The CLI's `vault=` option is documented but has no effect;
@@ -74,7 +83,9 @@ path can bypass it.
   unrelated reason drags its tasks along with it.
 - **Metadata failures degrade, they don't crash.** If a file's timestamps can't be
   read, its tasks appear under "Older" with a warning on stderr rather than taking
-  the whole listing down.
+  the whole listing down. `--since` never hides these tasks either — a task whose
+  date is unknown always passes the filter, since hiding it would look like data
+  loss.
 
 ## Environment
 

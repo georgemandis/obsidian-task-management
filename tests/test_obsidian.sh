@@ -90,6 +90,61 @@ test_dry_run_blocks_mutation_through_obs_directly() {
   fi
 }
 
+# --- Finding 5: macOS has no /usr/bin/timeout. obs() must resolve `timeout`
+# or fall back to `gtimeout` (coreutils), and when neither exists it must fail
+# with an actionable message rather than letting a 127 masquerade as an
+# Obsidian failure.
+
+# A PATH allowlist containing every tool obs() needs except timeout/gtimeout.
+_build_no_timeout_path() {
+  local d="$1" c
+  mkdir -p "$d"
+  for c in bash tr printf; do
+    local p; p="$(command -v "$c" 2>/dev/null || true)"
+    [[ -n "$p" ]] && ln -sf "$p" "$d/$c"
+  done
+}
+
+test_obs_fails_actionably_when_timeout_is_missing() {
+  local no_timeout_dir out rc
+  no_timeout_dir="$(mktemp -d)"
+  _build_no_timeout_path "$no_timeout_dir"
+  set +e
+  out="$(PATH="$no_timeout_dir" OBSIDIAN_BIN=false obs tasks format=json 2>&1)"
+  rc=$?
+  set -e
+  rm -rf "$no_timeout_dir"
+  assert_eq "$rc" "1" "missing timeout is a clean failure"
+  assert_contains "$out" "coreutils" "message points at the fix, not a mysterious exit 127"
+}
+
+test_obs_falls_back_to_gtimeout() {
+  local d out rc
+  d="$(mktemp -d)"
+  # Provide a fake gtimeout (coreutils' name) but no `timeout`, alongside the
+  # rest of the toolchain obs()/OBSIDIAN_BIN=echo-like stub needs.
+  local c
+  for c in bash tr printf; do
+    local p; p="$(command -v "$c" 2>/dev/null || true)"
+    [[ -n "$p" ]] && ln -sf "$p" "$d/$c"
+  done
+  local stub; stub="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho ok\n' > "$stub"
+  chmod +x "$stub"
+  # gtimeout is invoked as: gtimeout <secs> <OBSIDIAN_BIN> <args...> — drop the
+  # seconds and exec the rest, exactly like the real coreutils tool would.
+  printf '#!/usr/bin/env bash\nshift\nexec "$@"\n' > "$d/gtimeout"
+  chmod +x "$d/gtimeout"
+  set +e
+  out="$(PATH="$d" OBSIDIAN_BIN="$stub" obs tasks format=json 2>&1)"
+  rc=$?
+  set -e
+  rm -rf "$d"
+  rm -f "$stub"
+  assert_eq "$rc" "0" "gtimeout fallback succeeds"
+  assert_contains "$out" "ok" "call actually ran through gtimeout"
+}
+
 test_dry_run_blocks_uppercase_verb() {
   local stub out
   stub="$(mktemp)"

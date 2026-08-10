@@ -49,10 +49,11 @@ render_by_date() {
   jq -r --argjson mid "$mid" --arg field "$field" --arg since "$since" "
     $(bucket_jq_filter)
     def ts_of(v): (if (v == null or v == \"\") then \"0\" else v end) | tonumber;
+    def known_of(v): (v != null and v != \"\");
     def order: {\"Today\":0,\"Yesterday\":1,\"This week\":2,\"Last week\":3,\"Older\":4};
     [ .[]
-      | . + {ts: ts_of(.[\$field]), bucketName: bucket(ts_of(.[\$field]))}
-      | select(\$since == \"\" or ((\$mid - (.ts/1000)) / 86400) <= (\$since | tonumber))
+      | . + {ts: ts_of(.[\$field]), ts_known: known_of(.[\$field]), bucketName: bucket(ts_of(.[\$field]))}
+      | select(\$since == \"\" or (.ts_known | not) or ((\$mid - (.ts/1000)) / 86400) <= (\$since | tonumber))
     ]
     | group_by(.bucketName)
     | sort_by(order[.[0].bucketName])
@@ -67,27 +68,37 @@ render_by_date() {
   "
 }
 
+# $1 = modified|created, $2 = since-days (empty for no filter)
 # One TSV line per task: status, text, bucket, file, ref (ref last and hidden by fzf).
 render_picker() {
-  local field="$1" mid
+  local field="$1" since="${2:-}" mid
   mid="$(_ref_midnight)"
 
-  jq -r --argjson mid "$mid" --arg field "$field" "
+  jq -r --argjson mid "$mid" --arg field "$field" --arg since "$since" "
     $(bucket_jq_filter)
     def ts_of(v): (if (v == null or v == \"\") then \"0\" else v end) | tonumber;
-    .[] | [\"[\" + .status + \"]\", .text, bucket(ts_of(.[\$field])), .file, .ref]
+    def known_of(v): (v != null and v != \"\");
+    [ .[] | . + {ts: ts_of(.[\$field]), ts_known: known_of(.[\$field])}
+          | select(\$since == \"\" or (.ts_known | not) or ((\$mid - (.ts/1000)) / 86400) <= (\$since | tonumber))
+    ]
+    | .[] | [\"[\" + .status + \"]\", .text, bucket(.ts), .file, .ref]
         | @tsv
   "
 }
 
-# $1 = enriched JSON, $2 = date field, $3 = all-flag (1 to include completed).
+# $1 = enriched JSON, $2 = date field, $3 = all-flag (1 to include completed),
+# $4 = since-days (empty for no filter).
 # Selects tasks and toggles each one. Re-fetches immediately before writing to
 # narrow the window in which a captured ref (path:line) could go stale —
 # editing a note above a task shifts its line number.
+#
+# `since` narrows only what is displayed/selectable here; the re-fetch below
+# always uses `all_flag` (not `since`) because reconciliation must be able to
+# find a selected task regardless of how it re-buckets after being edited.
 run_picker() {
-  local enriched="$1" field="$2" all_flag="${3:-0}" lines ref
+  local enriched="$1" field="$2" all_flag="${3:-0}" since="${4:-}" lines ref
 
-  lines="$(printf '%s' "$enriched" | render_picker "$field")"
+  lines="$(printf '%s' "$enriched" | render_picker "$field" "$since")"
   [[ -n "$lines" ]] || { printf 'No tasks found.\n'; return 0; }
 
   local selected

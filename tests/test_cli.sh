@@ -42,4 +42,60 @@ test_toggle_done_flag_uses_done_verb() {
   assert_contains "$out" "done" "--done maps to the done verb"
 }
 
+# --- Finding 2: --since with no following value must not crash under set -u.
+
+test_since_with_no_value_fails_with_message() {
+  local out rc=0
+  out="$("$CLI" by-date --since 2>&1)" || rc=$?
+  assert_eq "$rc" "1" "--since with no value is an error, not a crash"
+  assert_contains "$out" "--since requires a value" "helpful message, not an unbound-variable trace"
+  if [[ "$out" == *"unbound variable"* ]]; then
+    fail "raw unbound-variable error leaked to the user: $out"
+  fi
+}
+
+test_pick_since_with_no_value_fails_with_message() {
+  local out rc=0
+  out="$("$CLI" pick --since 2>&1)" || rc=$?
+  assert_eq "$rc" "1" "pick --since with no value is an error, not a crash"
+  assert_contains "$out" "--since requires a value" "helpful message for pick too"
+}
+
+# --- Finding 3: non-numeric / malformed --since must fail cleanly, not leak a
+# raw jq error while exiting 0.
+
+test_since_non_numeric_fails_with_message() {
+  local out rc=0
+  out="$("$CLI" by-date --since abc 2>&1)" || rc=$?
+  assert_eq "$rc" "1" "--since abc is an error"
+  assert_contains "$out" "--since expects a number of days" "helpful message"
+  if [[ "$out" == *"jq: error"* ]]; then
+    fail "raw jq error leaked to the user: $out"
+  fi
+}
+
+test_since_malformed_unit_fails_with_message() {
+  local out rc=0
+  out="$("$CLI" by-date --since 7days 2>&1)" || rc=$?
+  assert_eq "$rc" "1" "--since 7days is an error (only a trailing 'd' is stripped)"
+  assert_contains "$out" "--since expects a number of days" "helpful message"
+}
+
+# --- Finding 4: by-file must reject unknown options instead of silently
+# discarding them, matching by-date's behavior.
+
+test_by_file_rejects_bogus_option() {
+  local out rc=0
+  out="$("$CLI" by-file --bogus 2>&1)" || rc=$?
+  assert_eq "$rc" "1" "by-file --bogus is an error"
+  assert_contains "$out" "Unknown option" "same message style as by-date"
+}
+
+test_by_file_rejects_since_option() {
+  local out rc=0
+  out="$("$CLI" by-file --since 7d 2>&1)" || rc=$?
+  assert_eq "$rc" "1" "by-file --since 7d is an error, not silently ignored"
+  assert_contains "$out" "Unknown option" "by-file does not understand --since"
+}
+
 run_tests

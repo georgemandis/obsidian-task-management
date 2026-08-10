@@ -3,6 +3,14 @@
 : "${OBSIDIAN_BIN:=obsidian}"
 : "${OBSIDIAN_TIMEOUT:=25}"
 
+# macOS has no /usr/bin/timeout; coreutils installs it as timeout or gtimeout.
+# Resolved lazily (not at source time) so tests can stub PATH per-case.
+_obs_timeout_cmd() {
+  if command -v timeout >/dev/null 2>&1; then printf 'timeout'
+  elif command -v gtimeout >/dev/null 2>&1; then printf 'gtimeout'
+  else return 1; fi
+}
+
 # Every CLI call goes through here. The CLI hangs rather than failing when it
 # cannot complete, so the timeout is mandatory.
 obs() {
@@ -21,8 +29,14 @@ obs() {
     fi
   fi
 
+  local timeout_cmd
+  timeout_cmd="$(_obs_timeout_cmd)" || {
+    printf "Requires 'timeout' (brew install coreutils).\n" >&2
+    return 1
+  }
+
   local rc=0
-  timeout "$OBSIDIAN_TIMEOUT" "$OBSIDIAN_BIN" "$@" || rc=$?
+  "$timeout_cmd" "$OBSIDIAN_TIMEOUT" "$OBSIDIAN_BIN" "$@" || rc=$?
   if [[ $rc -eq 124 ]]; then
     printf 'obsidian timed out after %ss. Is Obsidian running?\n' "$OBSIDIAN_TIMEOUT" >&2
     return 1
