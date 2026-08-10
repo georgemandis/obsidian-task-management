@@ -34,15 +34,25 @@ test_join_attaches_timestamps_to_tasks() {
   assert_eq "$got" "1786290000000" "task inherits its file's modified time"
 }
 
-test_join_leaves_no_task_without_timestamps() {
+test_join_yields_null_for_file_absent_from_metadata() {
   local meta tmp got
-  meta='[{"path":"Audit/09 Week-One Action List.md","created":"1765157522206","modified":"1786290000000"},
-        {"path":"Meetings/Standup.md","created":"1786000000000","modified":"1786100000000"}]'
+  meta='[{"path":"Audit/09 Week-One Action List.md","created":"1765157522206","modified":"1786290000000"}]'
   tmp="$(mktemp)"; printf '%s' "$meta" > "$tmp"
-  got="$(normalize_tasks < "$FIXTURES/tasks.json" | join_metadata "$tmp" \
-        | jq -r '[.[] | select(.modified == null)] | length')"
+  got="$(normalize_tasks < "$FIXTURES/tasks.json" | join_metadata "$tmp" | jq -r '.[2].modified')"
   rm -f "$tmp"
-  assert_eq "$got" "0" "every task got metadata"
+  assert_eq "$got" "null" "task with absent file gets null modified"
+}
+
+test_parse_meta_escapes_quotes_in_path() {
+  local got
+  got="$(printf 'path\tFoo "Bar".md\ncreated\t123\nmodified\t456\n' | parse_file_meta | jq -r '.path')"
+  assert_eq "$got" 'Foo "Bar".md' "quote in filename survives round-trip through jq"
+}
+
+test_parse_meta_escapes_backslash_in_path() {
+  local got
+  got="$(printf 'path\tFoo\\Bar.md\ncreated\t123\nmodified\t456\n' | parse_file_meta | jq -r '.path')"
+  assert_eq "$got" 'Foo\Bar.md' "backslash in filename survives round-trip through jq"
 }
 
 run_tests

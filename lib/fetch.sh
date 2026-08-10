@@ -6,8 +6,11 @@ parse_file_meta() {
   awk -F'\t' '
     { m[$1] = $2 }
     END {
+      p = m["path"]
+      gsub(/\\/, "\\\\", p)
+      gsub(/"/, "\\\"", p)
       printf "{\"path\":\"%s\",\"created\":\"%s\",\"modified\":\"%s\"}\n",
-        m["path"], m["created"], m["modified"]
+        p, m["created"], m["modified"]
     }'
 }
 
