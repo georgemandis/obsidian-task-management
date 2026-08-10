@@ -88,4 +88,66 @@ test_normalize_keeps_all_records() {
   assert_eq "$got" "3" "no records dropped"
 }
 
+ENRICHED='[
+  {"status":" ","text":"Chase the invoice","file":"Audit/09 Week-One Action List.md",
+   "line":"20","ref":"Audit/09 Week-One Action List.md:20",
+   "created":"1765157522206","modified":"1786290000000"},
+  {"status":" ","text":"Ask about staging deploy","file":"Meetings/Standup.md",
+   "line":"7","ref":"Meetings/Standup.md:7",
+   "created":"1786000000000","modified":"1786200000000"},
+  {"status":" ","text":"Draft the proposal","file":"Projects/Old Idea.md",
+   "line":"3","ref":"Projects/Old Idea.md:3",
+   "created":"1760000000000","modified":"1760000000000"}
+]'
+
+test_by_date_emits_bucket_headings() {
+  local got
+  got="$(printf '%s' "$ENRICHED" | OBSIDIAN_TASKS_NOW=1786248000 render_by_date modified "")"
+  assert_contains "$got" "## Today" "Today heading present"
+  assert_contains "$got" "## Older" "Older heading present"
+}
+
+test_by_date_groups_tasks_under_source_file() {
+  local got
+  got="$(printf '%s' "$ENRICHED" | OBSIDIAN_TASKS_NOW=1786248000 render_by_date modified "")"
+  assert_contains "$got" "Audit/09 Week-One Action List.md" "file heading shown"
+  assert_contains "$got" "Chase the invoice" "task text shown"
+}
+
+test_by_date_omits_empty_buckets() {
+  local got
+  got="$(printf '%s' "$ENRICHED" | OBSIDIAN_TASKS_NOW=1786248000 render_by_date modified "")"
+  if [[ "$got" == *"## Last week"* ]]; then
+    fail "Last week bucket is empty and should be omitted"
+  fi
+}
+
+test_since_filter_excludes_old_files() {
+  local got
+  got="$(printf '%s' "$ENRICHED" | OBSIDIAN_TASKS_NOW=1786248000 render_by_date modified 7)"
+  if [[ "$got" == *"Draft the proposal"* ]]; then
+    fail "--since 7d should have excluded a file untouched for months"
+  fi
+  assert_contains "$got" "Chase the invoice" "recent task retained"
+}
+
+test_picker_line_ends_with_ref() {
+  local got
+  got="$(printf '%s' "$ENRICHED" | OBSIDIAN_TASKS_NOW=1786248000 render_picker modified | head -1)"
+  assert_eq "${got##*$'\t'}" "Audit/09 Week-One Action List.md:20" "ref is the last column"
+}
+
+test_picker_line_has_five_columns() {
+  local got n
+  got="$(printf '%s' "$ENRICHED" | OBSIDIAN_TASKS_NOW=1786248000 render_picker modified | head -1)"
+  n="$(awk -F'\t' '{print NF}' <<< "$got")"
+  assert_eq "$n" "5" "status, text, bucket, file, ref"
+}
+
+test_picker_shows_filename_for_searching() {
+  local got
+  got="$(printf '%s' "$ENRICHED" | OBSIDIAN_TASKS_NOW=1786248000 render_picker modified | head -1)"
+  assert_contains "$got" "Audit/09 Week-One Action List.md" "filename visible for search"
+}
+
 run_tests

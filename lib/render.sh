@@ -31,3 +31,49 @@ normalize_tasks() {
         text: (.text | sub("^\\s*-\\s*\\[.\\]\\s*"; ""))
       } ]'
 }
+
+# Tests override the clock via OBSIDIAN_TASKS_NOW.
+_ref_midnight() {
+  if [[ -n "${OBSIDIAN_TASKS_NOW:-}" ]]; then
+    printf '%s' "$OBSIDIAN_TASKS_NOW"
+  else
+    midnight_epoch
+  fi
+}
+
+# $1 = modified|created, $2 = since-days (empty for no filter)
+render_by_date() {
+  local field="$1" since="${2:-}" mid
+  mid="$(_ref_midnight)"
+
+  jq -r --argjson mid "$mid" --arg field "$field" --arg since "$since" "
+    $(bucket_jq_filter)
+    def order: {\"Today\":0,\"Yesterday\":1,\"This week\":2,\"Last week\":3,\"Older\":4};
+    [ .[]
+      | . + {ts: (.[\$field] | tonumber), bucketName: bucket(.[\$field] | tonumber)}
+      | select(\$since == \"\" or ((\$mid - (.ts/1000)) / 86400) < (\$since | tonumber))
+    ]
+    | group_by(.bucketName)
+    | sort_by(order[.[0].bucketName])
+    | map(
+        \"## \" + .[0].bucketName + \"\n\"
+        + ( group_by(.file)
+            | map(\"  \" + .[0].file + \"\n\"
+                  + (map(\"    [\" + .status + \"] \" + .text) | join(\"\n\")))
+            | join(\"\n\") )
+      )
+    | join(\"\n\n\")
+  "
+}
+
+# One TSV line per task: status, text, bucket, file, ref (ref last and hidden by fzf).
+render_picker() {
+  local field="$1" mid
+  mid="$(_ref_midnight)"
+
+  jq -r --argjson mid "$mid" --arg field "$field" "
+    $(bucket_jq_filter)
+    .[] | [\"[\" + .status + \"]\", .text, bucket(.[\$field] | tonumber), .file, .ref]
+        | @tsv
+  "
+}

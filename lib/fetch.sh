@@ -25,3 +25,38 @@ join_metadata() {
           modified: ($byPath[.file].modified // null)
         } ]'
 }
+
+# $1 = 1 to include completed tasks, else 0
+fetch_enriched() {
+  local all="${1:-0}" tasks meta_file path
+
+  if [[ "$all" == "1" ]]; then
+    tasks="$(obs tasks format=json)"
+  else
+    tasks="$(obs tasks todo format=json)"
+  fi
+
+  # An empty vault yields no tasks; emit an empty array rather than failing.
+  if [[ -z "$tasks" || "$(jq -r 'length' <<< "$tasks")" == "0" ]]; then
+    printf '[]\n'
+    return 0
+  fi
+
+  tasks="$(printf '%s' "$tasks" | normalize_tasks)"
+
+  meta_file="$(mktemp)"
+  trap 'rm -f "$meta_file"' RETURN
+
+  {
+    printf '['
+    local first=1
+    while IFS= read -r path; do
+      [[ $first -eq 0 ]] && printf ','
+      first=0
+      obs file path="$path" | parse_file_meta
+    done < <(jq -r '[.[].file] | unique | .[]' <<< "$tasks")
+    printf ']'
+  } > "$meta_file"
+
+  printf '%s' "$tasks" | join_metadata "$meta_file"
+}
