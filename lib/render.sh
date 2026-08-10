@@ -48,7 +48,7 @@ render_by_date() {
 
   jq -r --argjson mid "$mid" --arg field "$field" --arg since "$since" "
     $(bucket_jq_filter)
-    def ts_of(v): (v // \"0\") | tonumber;
+    def ts_of(v): (if (v == null or v == \"\") then \"0\" else v end) | tonumber;
     def order: {\"Today\":0,\"Yesterday\":1,\"This week\":2,\"Last week\":3,\"Older\":4};
     [ .[]
       | . + {ts: ts_of(.[\$field]), bucketName: bucket(ts_of(.[\$field]))}
@@ -74,7 +74,7 @@ render_picker() {
 
   jq -r --argjson mid "$mid" --arg field "$field" "
     $(bucket_jq_filter)
-    def ts_of(v): (v // \"0\") | tonumber;
+    def ts_of(v): (if (v == null or v == \"\") then \"0\" else v end) | tonumber;
     .[] | [\"[\" + .status + \"]\", .text, bucket(ts_of(.[\$field])), .file, .ref]
         | @tsv
   "

@@ -172,4 +172,20 @@ test_since_boundary_matches_bucket_boundary() {
   assert_contains "$got" "exactly seven" "a task exactly 7 days old must survive --since 7d"
 }
 
+test_render_survives_empty_string_timestamps() {
+  local e got
+  e='[{"status":" ","text":"GOOD","file":"A.md","line":"1","ref":"A.md:1","created":"1786290000000","modified":"1786290000000"},
+      {"status":" ","text":"EMPTYSTR","file":"B.md","line":"2","ref":"B.md:2","created":"","modified":""}]'
+  got="$(printf '%s' "$e" | OBSIDIAN_TASKS_NOW=1786248000 render_by_date modified "" 2>&1)"
+  assert_contains "$got" "GOOD" "an empty-string timestamp must not erase healthy tasks"
+  assert_contains "$got" "EMPTYSTR" "the affected task must still appear"
+}
+
+test_picker_survives_empty_string_timestamps() {
+  local e got
+  e='[{"status":" ","text":"EMPTYSTR","file":"B.md","line":"2","ref":"B.md:2","created":"","modified":""}]'
+  got="$(printf '%s' "$e" | OBSIDIAN_TASKS_NOW=1786248000 render_picker modified 2>&1)"
+  assert_contains "$got" "B.md:2" "picker must still emit a row for an empty-string timestamp"
+}
+
 run_tests

@@ -68,4 +68,15 @@ test_fetch_enriched_fails_loudly_when_tasks_call_fails() {
   assert_eq "$rc" "1" "a failed tasks call must not look like an empty vault"
 }
 
+test_render_survives_metadata_missing_a_row() {
+  local meta tmp tasks got
+  # parse_file_meta emits "" (not null) when the TSV lacks a created row.
+  meta="[$(printf 'path\tAudit/09 Week-One Action List.md\nmodified\t1786290000000\n' | parse_file_meta)]"
+  tmp="$(mktemp)"; printf '%s' "$meta" > "$tmp"
+  tasks="$(normalize_tasks < "$FIXTURES/tasks.json" | join_metadata "$tmp")"
+  rm -f "$tmp"
+  got="$(printf '%s' "$tasks" | OBSIDIAN_TASKS_NOW=1786248000 render_by_date created "" 2>&1)"
+  assert_contains "$got" "Follow-up norm" "a file with no created row must not crash the render"
+}
+
 run_tests
