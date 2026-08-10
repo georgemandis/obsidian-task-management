@@ -9,9 +9,11 @@ obs() {
   # Dry-run is enforced here, at the chokepoint, so no caller can bypass it by
   # reaching for obs() directly instead of obs_task_write().
   if [[ "${OBSIDIAN_TASKS_DRY_RUN:-}" == "1" && "${1:-}" == "task" ]]; then
-    local a mutating=0
+    local a verb mutating=0
     for a in "$@"; do
-      case "${a,,}" in toggle|done|todo|status=*) mutating=1 ;; esac
+      # tr, not ${a,,}: macOS ships bash 3.2, where ${a,,} is a syntax error.
+      verb="$(printf '%s' "$a" | tr '[:upper:]' '[:lower:]')"
+      case "$verb" in toggle|done|todo|status=*) mutating=1 ;; esac
     done
     if [[ $mutating -eq 1 ]]; then
       printf 'DRY RUN: obsidian %s\n' "$*"
