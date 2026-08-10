@@ -15,10 +15,10 @@ bucket_jq_filter() {
   cat <<'JQ'
 def bucket(ms):
   (($mid - (ms/1000)) / 86400) as $d
-  | if   $d <= 0 then "Today"
-    elif $d < 1  then "Yesterday"
-    elif $d < 7  then "This week"
-    elif $d < 14 then "Last week"
+  | if   $d <= 0  then "Today"
+    elif $d <= 1  then "Yesterday"
+    elif $d <= 7  then "This week"
+    elif $d <= 14 then "Last week"
     else "Older" end;
 JQ
 }

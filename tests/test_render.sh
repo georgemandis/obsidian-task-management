@@ -43,4 +43,16 @@ test_midnight_epoch_is_a_plausible_timestamp() {
   assert_eq "$(( m % 60 ))" "0" "midnight falls on a minute boundary"
 }
 
+test_exactly_24h_before_midnight_is_yesterday() {
+  assert_eq "$(bucket_of 1786161600000)" "Yesterday" "exact prior midnight is Yesterday"
+}
+
+test_exactly_seven_days_before_is_this_week() {
+  assert_eq "$(bucket_of 1785643200000)" "This week" "exact 7-day boundary is This week"
+}
+
+test_exactly_fourteen_days_before_is_last_week() {
+  assert_eq "$(bucket_of 1785038400000)" "Last week" "exact 14-day boundary is Last week"
+}
+
 run_tests
