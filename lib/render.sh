@@ -79,3 +79,35 @@ render_picker() {
         | @tsv
   "
 }
+
+# $1 = enriched JSON, $2 = date field. Selects tasks and toggles each one.
+run_picker() {
+  local enriched="$1" field="$2" lines ref
+
+  lines="$(printf '%s' "$enriched" | render_picker "$field")"
+  [[ -n "$lines" ]] || { printf 'No tasks found.\n'; return 0; }
+
+  local selected
+  if command -v fzf >/dev/null 2>&1; then
+    # --with-nth=1..-2 hides the trailing ref from display and from matching.
+    selected="$(printf '%s\n' "$lines" \
+      | fzf --multi --delimiter=$'\t' --with-nth=1..-2 \
+            --prompt='task> ' --header='TAB to select multiple, ENTER to toggle' \
+      || true)"
+  else
+    printf 'fzf not found — falling back to a numbered list.\n' >&2
+    printf '%s\n' "$lines" | awk -F'\t' '{printf "%3d  %s %s  (%s)\n", NR, $1, $2, $3}'
+    printf 'Number to toggle (blank to cancel): '
+    local n; read -r n
+    [[ -n "$n" ]] || return 0
+    selected="$(printf '%s\n' "$lines" | sed -n "${n}p")"
+  fi
+
+  [[ -n "$selected" ]] || return 0
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    ref="${line##*$'\t'}"
+    obs_task_write "$ref" toggle || return 1
+  done <<< "$selected"
+}
