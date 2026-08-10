@@ -55,7 +55,7 @@ case "$cmd" in
     if [[ "$cmd" == "by-date" ]]; then
       printf '%s' "$enriched" | render_by_date "$field" "$since"
     else
-      run_picker "$enriched" "$field"
+      run_picker "$enriched" "$field" "$all"
     fi
     ;;
 

@@ -80,9 +80,12 @@ render_picker() {
   "
 }
 
-# $1 = enriched JSON, $2 = date field. Selects tasks and toggles each one.
+# $1 = enriched JSON, $2 = date field, $3 = all-flag (1 to include completed).
+# Selects tasks and toggles each one. Re-fetches immediately before writing to
+# narrow the window in which a captured ref (path:line) could go stale —
+# editing a note above a task shifts its line number.
 run_picker() {
-  local enriched="$1" field="$2" lines ref
+  local enriched="$1" field="$2" all_flag="${3:-0}" lines ref
 
   lines="$(printf '%s' "$enriched" | render_picker "$field")"
   [[ -n "$lines" ]] || { printf 'No tasks found.\n'; return 0; }
@@ -100,14 +103,38 @@ run_picker() {
     printf 'Number to toggle (blank to cancel): '
     local n; read -r n
     [[ -n "$n" ]] || return 0
+    if [[ ! "$n" =~ ^[0-9]+$ ]]; then
+      printf 'Invalid selection: %s\n' "$n" >&2
+      return 1
+    fi
     selected="$(printf '%s\n' "$lines" | sed -n "${n}p")"
+    if [[ -z "$selected" ]]; then
+      printf 'No task numbered %s\n' "$n" >&2
+      return 1
+    fi
   fi
 
   [[ -n "$selected" ]] || return 0
 
+  # Line numbers shift when a note is edited above a task, so a ref captured
+  # before the user browsed can be stale. Re-fetch and confirm before writing.
+  local fresh
+  fresh="$(fetch_enriched "$all_flag")" || return 1
+
+  local want have
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     ref="${line##*$'\t'}"
+    want="$(printf '%s' "$line" | cut -f2)"
+    have="$(printf '%s' "$fresh" | jq -r --arg r "$ref" '.[] | select(.ref == $r) | .text' | head -1)"
+    if [[ -z "$have" ]]; then
+      printf 'Skipped %s — task no longer exists (file changed?)\n' "$ref" >&2
+      continue
+    fi
+    if [[ "$have" != "$want" ]]; then
+      printf 'Skipped %s — line moved; it now reads: %s\n' "$ref" "$have" >&2
+      continue
+    fi
     obs_task_write "$ref" toggle || return 1
   done <<< "$selected"
 }

@@ -3,6 +3,8 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DIR/helpers.sh"
 source "$DIR/../lib/render.sh"
+source "$DIR/../lib/obsidian.sh"
+source "$DIR/../lib/fetch.sh"
 
 # Fixed reference point: 2026-08-09 00:00:00 local == 1786248000.
 # All expectations below are relative to that midnight.
@@ -186,6 +188,99 @@ test_picker_survives_empty_string_timestamps() {
   e='[{"status":" ","text":"EMPTYSTR","file":"B.md","line":"2","ref":"B.md:2","created":"","modified":""}]'
   got="$(printf '%s' "$e" | OBSIDIAN_TASKS_NOW=1786248000 render_picker modified 2>&1)"
   assert_contains "$got" "B.md:2" "picker must still emit a row for an empty-string timestamp"
+}
+
+PICKER_ENRICHED='[
+  {"status":" ","text":"Chase the invoice","file":"Audit/09 Week-One Action List.md",
+   "line":"20","ref":"Audit/09 Week-One Action List.md:20",
+   "created":"1765157522206","modified":"1786290000000"}
+]'
+
+# A PATH with every tool run_picker's fallback needs (bash, jq, awk, sed, ...)
+# but NOT fzf, even when fzf happens to be installed on the dev/CI machine —
+# `PATH="/nonexistent:$PATH"` does not hide a real fzf that appears later in
+# the original PATH, so we build an explicit allowlist directory instead.
+_build_no_fzf_path() {
+  local d="$1" c
+  mkdir -p "$d"
+  for c in bash jq awk sed mktemp cat printf grep head tr date timeout mkdir rm chmod; do
+    local p; p="$(command -v "$c" 2>/dev/null || true)"
+    [[ -n "$p" ]] && ln -sf "$p" "$d/$c"
+  done
+}
+
+# Non-fzf fallback: fzf is absent from PATH, so run_picker prompts with a
+# numbered list and reads a selection from stdin. Non-numeric input must be
+# rejected before it ever reaches `sed -n "<n>p"` (a raw sed error there is
+# the bug this test guards against — see review finding 1).
+test_picker_fallback_rejects_non_numeric_input() {
+  local out rc no_fzf_dir
+  no_fzf_dir="$(mktemp -d)"
+  _build_no_fzf_path "$no_fzf_dir"
+  set +e
+  out="$(printf 'abc\n' | PATH="$no_fzf_dir" OBSIDIAN_TASKS_DRY_RUN=1 OBSIDIAN_BIN=false \
+    run_picker "$PICKER_ENRICHED" modified 0 2>&1)"
+  rc=$?
+  set -e
+  rm -rf "$no_fzf_dir"
+  assert_eq "$rc" "1" "invalid selection is an error"
+  assert_contains "$out" "Invalid selection" "clear message, not a raw sed error"
+  if [[ "$out" == *"sed:"* ]]; then
+    fail "raw sed error leaked to the user: $out"
+  fi
+}
+
+# Stale-ref reconciliation: the picker's snapshot (fed as $1) shows one piece
+# of text for a ref, but by the time the user selects it and run_picker
+# re-fetches, the underlying task text has changed (e.g. the line shifted
+# after an edit). The stale selection must be skipped with a message, never
+# toggled — and toggling must never be attempted (OBSIDIAN_BIN=false would
+# fail loudly with dry-run off, proving obs_task_write was never reached for
+# this ref).
+test_picker_skips_stale_ref_without_toggling() {
+  local stub out rc
+  stub="$(mktemp)"
+  # Stubbed `obsidian` binary: fetch_enriched's re-fetch calls `obs tasks
+  # todo format=json`; return fresh JSON where this task's text has changed
+  # since the snapshot passed into run_picker. Any other invocation (e.g. a
+  # mutating `task ref=... toggle`) is unexpected for this test and fails.
+  cat > "$stub" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  "tasks todo format=json")
+    printf '[{"status":" ","text":"[ ] Chase the invoice NOW",\
+"file":"Audit/09 Week-One Action List.md","line":"21"}]'
+    ;;
+  "file path=Audit/09 Week-One Action List.md")
+    printf 'path\tAudit/09 Week-One Action List.md\ncreated\t1765157522206\nmodified\t1786290000000\n'
+    ;;
+  *)
+    echo "UNEXPECTED CALL: $*" >&2
+    exit 1
+    ;;
+esac
+STUB
+  chmod +x "$stub"
+
+  local fzf_stub fzf_dir
+  fzf_dir="$(mktemp -d)"
+  fzf_stub="$fzf_dir/fzf"
+  # fzf stub: echoes back whatever it was given on stdin, simulating the user
+  # selecting the one and only row (fzf normally strips nothing from stdin).
+  printf '#!/usr/bin/env bash\ncat\n' > "$fzf_stub"
+  chmod +x "$fzf_stub"
+
+  set +e
+  out="$(PATH="$fzf_dir:$PATH" OBSIDIAN_BIN="$stub" \
+    run_picker "$PICKER_ENRICHED" modified 0 2>&1)"
+  rc=$?
+  set -e
+  rm -f "$stub"
+  rm -rf "$fzf_dir"
+
+  assert_eq "$rc" "0" "a skip is not a failure"
+  assert_contains "$out" "Skipped" "stale ref reported as skipped"
+  assert_contains "$out" "Audit/09 Week-One Action List.md:20" "the stale ref is named"
 }
 
 run_tests
