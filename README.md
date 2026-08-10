@@ -17,6 +17,18 @@ it. This tool gathers them into one view without moving them.
 
 Runs on bash 3.2 (the macOS system bash) and later.
 
+## Install
+
+Clone, then symlink the entrypoint onto your PATH:
+
+```bash
+git clone git@github.com:georgemandis/obsidian-task-management.git
+ln -s "$PWD/obsidian-task-management/bin/obsidian-tasks" ~/.local/bin/obsidian-tasks
+```
+
+Symlink the script, not a copy — it locates `lib/` by resolving its own symlink back
+to the repo, so the checkout can live anywhere.
+
 ## Usage
 
 ```bash
@@ -116,6 +128,7 @@ the two disagree on syntax the code deliberately avoids:
 | File | Responsibility |
 |---|---|
 | `bin/obsidian-tasks` | Argument parsing and command dispatch |
+| `ROADMAP.md` | What's deferred, what's next, and why |
 | `lib/obsidian.sh` | Every CLI invocation: timeout, dry-run guard, error detection |
 | `lib/fetch.sh` | Task JSON + per-file metadata → one enriched structure |
 | `lib/render.sh` | Date bucketing, grouping, formatting, the fzf picker |
