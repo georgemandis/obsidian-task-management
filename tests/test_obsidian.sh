@@ -90,4 +90,16 @@ test_dry_run_blocks_mutation_through_obs_directly() {
   fi
 }
 
+test_dry_run_blocks_uppercase_verb() {
+  local stub out
+  stub="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "STUB RAN"\n' > "$stub"
+  chmod +x "$stub"
+  out="$(OBSIDIAN_TASKS_DRY_RUN=1 OBSIDIAN_BIN="$stub" obs task ref="X.md:1" TOGGLE 2>&1)"
+  rm -f "$stub"
+  if [[ "$out" == *"STUB RAN"* ]]; then
+    fail "dry run did not block an uppercase mutating verb"
+  fi
+}
+
 run_tests

@@ -11,7 +11,7 @@ obs() {
   if [[ "${OBSIDIAN_TASKS_DRY_RUN:-}" == "1" && "${1:-}" == "task" ]]; then
     local a mutating=0
     for a in "$@"; do
-      case "$a" in toggle|done|todo|status=*) mutating=1 ;; esac
+      case "${a,,}" in toggle|done|todo|status=*) mutating=1 ;; esac
     done
     if [[ $mutating -eq 1 ]]; then
       printf 'DRY RUN: obsidian %s\n' "$*"
