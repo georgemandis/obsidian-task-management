@@ -13,7 +13,7 @@ obsidian-tasks — manage Obsidian tasks from the terminal
 Usage:
   obsidian-tasks by-date [--created] [--all] [--since <n>d]
   obsidian-tasks by-file [--all]
-  obsidian-tasks pick    [--created] [--all]
+  obsidian-tasks pick    [--created] [--all] [--since <n>d]
   obsidian-tasks toggle <ref> [--done|--todo]
 
 Options:

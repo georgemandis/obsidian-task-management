@@ -28,6 +28,7 @@ obsidian-tasks by-date --all        # include completed tasks
 obsidian-tasks by-file              # group by source file
 
 obsidian-tasks pick                 # fuzzy-select tasks and toggle them
+obsidian-tasks pick --since 7d      # ...narrowed to this week
 obsidian-tasks toggle "Notes/Standup.md:7"
 obsidian-tasks toggle "Notes/Standup.md:7" --done
 ```
@@ -101,7 +102,7 @@ reconciliation rather than a guarantee this tool makes.
 bash tests/run.sh
 ```
 
-63 tests, running entirely against fixtures and stubs — they never touch a vault or
+77 tests, running entirely against fixtures and stubs — they never touch a vault or
 invoke the real `obsidian` binary. Worth running under both bash versions, since
 the two disagree on syntax the code deliberately avoids:
 
