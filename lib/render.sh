@@ -125,8 +125,12 @@ run_picker() {
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     ref="${line##*$'\t'}"
-    want="$(printf '%s' "$line" | cut -f2)"
-    have="$(printf '%s' "$fresh" | jq -r --arg r "$ref" '.[] | select(.ref == $r) | .text' | head -1)"
+    # Compare both sides through jq's raw .text, never the @tsv-rendered line:
+    # @tsv escapes backslash/tab/newline as two-character sequences, so a
+    # comparison against a cut -f2 field would false-mismatch on any task
+    # text containing those characters (e.g. a literal backslash in a regex).
+    want="$(printf '%s' "$enriched" | jq -r --arg r "$ref" '.[] | select(.ref == $r) | .text' | head -1)"
+    have="$(printf '%s' "$fresh"    | jq -r --arg r "$ref" '.[] | select(.ref == $r) | .text' | head -1)"
     if [[ -z "$have" ]]; then
       printf 'Skipped %s — task no longer exists (file changed?)\n' "$ref" >&2
       continue

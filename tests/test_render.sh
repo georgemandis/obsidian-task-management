@@ -248,7 +248,7 @@ test_picker_skips_stale_ref_without_toggling() {
 #!/usr/bin/env bash
 case "$*" in
   "tasks todo format=json")
-    printf '[{"status":" ","text":"[ ] Chase the invoice NOW",\
+    printf '[{"status":" ","text":"- [ ] Chase the invoice NOW",\
 "file":"Audit/09 Week-One Action List.md","line":"21"}]'
     ;;
   "file path=Audit/09 Week-One Action List.md")
@@ -281,6 +281,151 @@ STUB
   assert_eq "$rc" "0" "a skip is not a failure"
   assert_contains "$out" "Skipped" "stale ref reported as skipped"
   assert_contains "$out" "Audit/09 Week-One Action List.md:20" "the stale ref is named"
+}
+
+# --- Regression: comparison must decode both sides through jq, not @tsv -----
+#
+# want (originally) came from `cut -f2` on the @tsv-rendered picker line;
+# have came from raw `jq -r .text`. @tsv escapes backslash/tab/newline as
+# two-character sequences, so unmoved tasks containing those characters were
+# false-reported as "line moved" and silently skipped instead of toggled —
+# the worst failure mode for a toggle tool, since the user believes it fired.
+#
+# Each helper below sets up a one-task PICKER_ENRICHED snapshot, an OBSIDIAN_BIN
+# stub answering fetch_enriched's re-fetch (tasks todo format=json + file
+# path=...), and an fzf stub that echoes stdin back (selects the one row).
+# obs_task_write runs under OBSIDIAN_TASKS_DRY_RUN=1, so a real toggle is
+# never attempted — a successful toggle path is detected via the "DRY RUN"
+# line it prints instead of reaching a real binary.
+
+# $1 = task text in the original snapshot (the picker's view)
+# $2 = task text the stub's re-fetch should return (the "current" state)
+_run_picker_backslash_regression_case() {
+  local snapshot_text="$1" fresh_text="$2" stub out rc
+  local enriched
+  enriched="$(jq -n --arg t "$snapshot_text" '
+    [{"status":" ","text":$t,"file":"Regex/Notes.md","line":"5","ref":"Regex/Notes.md:5",
+      "created":"1765157522206","modified":"1786290000000"}]')"
+
+  stub="$(mktemp)"
+  # Embed fresh_text via a jq --arg-built payload written into the stub, so
+  # the shell heredoc never has to hand-escape backslashes/tabs itself.
+  local fresh_json
+  fresh_json="$(jq -nc --arg t "$fresh_text" \
+    '[{"status":" ","text":("- [ ] " + $t),"file":"Regex/Notes.md","line":"5"}]')"
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'case "$*" in\n'
+    printf '  "tasks todo format=json")\n'
+    printf '    cat <<'"'"'FRESH'"'"'\n%s\nFRESH\n' "$fresh_json"
+    printf '    ;;\n'
+    printf '  "file path=Regex/Notes.md")\n'
+    printf '    printf '"'"'path\\tRegex/Notes.md\\ncreated\\t1765157522206\\nmodified\\t1786290000000\\n'"'"'\n'
+    printf '    ;;\n'
+    printf '  *)\n'
+    printf '    echo "UNEXPECTED CALL: $*" >&2\n'
+    printf '    exit 1\n'
+    printf '    ;;\n'
+    printf 'esac\n'
+  } > "$stub"
+  chmod +x "$stub"
+
+  local fzf_stub fzf_dir
+  fzf_dir="$(mktemp -d)"
+  fzf_stub="$fzf_dir/fzf"
+  printf '#!/usr/bin/env bash\ncat\n' > "$fzf_stub"
+  chmod +x "$fzf_stub"
+
+  set +e
+  out="$(PATH="$fzf_dir:$PATH" OBSIDIAN_BIN="$stub" OBSIDIAN_TASKS_DRY_RUN=1 \
+    run_picker "$enriched" modified 0 2>&1)"
+  rc=$?
+  set -e
+  rm -f "$stub"
+  rm -rf "$fzf_dir"
+
+  printf '%s\n%s' "$rc" "$out"
+}
+
+test_picker_toggles_unmoved_task_containing_backslash() {
+  local result rc out
+  result="$(_run_picker_backslash_regression_case 'match `\d+` in path' 'match `\d+` in path')"
+  rc="$(printf '%s' "$result" | head -1)"
+  out="$(printf '%s' "$result" | tail -n +2)"
+  assert_eq "$rc" "0" "an unmoved backslash-bearing task toggles cleanly"
+  assert_contains "$out" "DRY RUN" "toggle was attempted (not skipped)"
+  assert_contains "$out" "ref=Regex/Notes.md:5" "the correct ref was toggled"
+  if [[ "$out" == *"Skipped"* ]]; then
+    fail "unmoved task with a backslash was false-skipped as moved: $out"
+  fi
+}
+
+test_picker_toggles_unmoved_task_containing_tab() {
+  local result rc out
+  result="$(_run_picker_backslash_regression_case $'col1\tcol2 unchanged' $'col1\tcol2 unchanged')"
+  rc="$(printf '%s' "$result" | head -1)"
+  out="$(printf '%s' "$result" | tail -n +2)"
+  assert_eq "$rc" "0" "an unmoved tab-bearing task toggles cleanly"
+  assert_contains "$out" "DRY RUN" "toggle was attempted (not skipped)"
+  if [[ "$out" == *"Skipped"* ]]; then
+    fail "unmoved task with a literal tab was false-skipped as moved: $out"
+  fi
+}
+
+test_picker_still_skips_genuinely_changed_task() {
+  local result rc out
+  result="$(_run_picker_backslash_regression_case 'match `\d+` in path' 'match `\d+` in a totally different path')"
+  rc="$(printf '%s' "$result" | head -1)"
+  out="$(printf '%s' "$result" | tail -n +2)"
+  assert_eq "$rc" "0" "a skip is not a failure"
+  assert_contains "$out" "Skipped" "genuinely changed task is still skipped"
+  assert_contains "$out" "line moved" "reported as moved, not toggled"
+  if [[ "$out" == *"DRY RUN"* ]]; then
+    fail "a genuinely changed task was toggled instead of skipped: $out"
+  fi
+}
+
+test_picker_skips_task_vanished_from_fresh_data() {
+  local enriched stub out rc
+  enriched='[{"status":" ","text":"Chase the invoice","file":"Audit/09 Week-One Action List.md",
+    "line":"20","ref":"Audit/09 Week-One Action List.md:20",
+    "created":"1765157522206","modified":"1786290000000"}]'
+
+  stub="$(mktemp)"
+  cat > "$stub" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  "tasks todo format=json")
+    printf '[]'
+    ;;
+  *)
+    echo "UNEXPECTED CALL: $*" >&2
+    exit 1
+    ;;
+esac
+STUB
+  chmod +x "$stub"
+
+  local fzf_stub fzf_dir
+  fzf_dir="$(mktemp -d)"
+  fzf_stub="$fzf_dir/fzf"
+  printf '#!/usr/bin/env bash\ncat\n' > "$fzf_stub"
+  chmod +x "$fzf_stub"
+
+  set +e
+  out="$(PATH="$fzf_dir:$PATH" OBSIDIAN_BIN="$stub" OBSIDIAN_TASKS_DRY_RUN=1 \
+    run_picker "$enriched" modified 0 2>&1)"
+  rc=$?
+  set -e
+  rm -f "$stub"
+  rm -rf "$fzf_dir"
+
+  assert_eq "$rc" "0" "a skip is not a failure"
+  assert_contains "$out" "Skipped" "vanished task is skipped"
+  assert_contains "$out" "no longer exists" "reported as no-longer-existing, not moved"
+  if [[ "$out" == *"DRY RUN"* ]]; then
+    fail "a vanished task was toggled instead of skipped: $out"
+  fi
 }
 
 run_tests
