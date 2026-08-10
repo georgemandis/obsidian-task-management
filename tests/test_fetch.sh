@@ -79,4 +79,69 @@ test_render_survives_metadata_missing_a_row() {
   assert_contains "$got" "Follow-up norm" "a file with no created row must not crash the render"
 }
 
+# --- Regression: obs() must not drain the process-substitution pipe feeding
+# fetch_enriched's per-file metadata loop -------------------------------------
+#
+# obs() runs `timeout ... "$OBSIDIAN_BIN" "$@"` with inherited stdin. Inside
+# fetch_enriched, that call happens inside
+#   while IFS= read -r path; do ... obs file path="$path" ... done < <(...)
+# A child process that inherits stdin from a `while read` loop fed by a pipe
+# will happily drain that pipe itself, so the loop's own `read` starves after
+# the very first iteration — every file after the first silently gets no
+# metadata, even though `obsidian file path=...` would have answered fine for
+# each of them individually. This is invisible to every other test in this
+# suite because they all stub metadata for a single file at a time.
+#
+# The stub below returns three tasks across three distinct files, each with
+# real, distinguishable timestamps, so a broken loop is caught by any of the
+# three files coming back empty.
+test_fetch_enriched_reads_metadata_for_every_file_not_just_the_first() {
+  local stub out rc
+  stub="$(mktemp)"
+  cat > "$stub" <<'STUB'
+#!/usr/bin/env bash
+# The real `obsidian` binary reads/drains its stdin even for commands that
+# never use it (confirmed against the live binary). A stub that ignores
+# stdin cannot reproduce the pipe-starvation bug, so mirror that here.
+cat >/dev/null
+case "$*" in
+  "tasks todo format=json")
+    printf '[
+      {"status":" ","text":"- [ ] one","file":"A.md","line":"1"},
+      {"status":" ","text":"- [ ] two","file":"B.md","line":"2"},
+      {"status":" ","text":"- [ ] three","file":"C.md","line":"3"}
+    ]'
+    ;;
+  "file path=A.md")
+    printf 'path\tA.md\ncreated\t1000000000000\nmodified\t1000000000001\n' ;;
+  "file path=B.md")
+    printf 'path\tB.md\ncreated\t2000000000000\nmodified\t2000000000001\n' ;;
+  "file path=C.md")
+    printf 'path\tC.md\ncreated\t3000000000000\nmodified\t3000000000001\n' ;;
+  *)
+    echo "UNEXPECTED CALL: $*" >&2
+    exit 1
+    ;;
+esac
+STUB
+  chmod +x "$stub"
+
+  set +e
+  out="$(OBSIDIAN_BIN="$stub" fetch_enriched 0 2>&1)"
+  rc=$?
+  set -e
+  rm -f "$stub"
+
+  assert_eq "$rc" "0" "fetch_enriched succeeds with a healthy stub"
+
+  local mod_a mod_b mod_c
+  mod_a="$(printf '%s' "$out" | jq -r '.[] | select(.file == "A.md") | .modified')"
+  mod_b="$(printf '%s' "$out" | jq -r '.[] | select(.file == "B.md") | .modified')"
+  mod_c="$(printf '%s' "$out" | jq -r '.[] | select(.file == "C.md") | .modified')"
+
+  assert_eq "$mod_a" "1000000000001" "first file gets its real modified time"
+  assert_eq "$mod_b" "2000000000001" "second file must not be starved by the first obs() call draining stdin"
+  assert_eq "$mod_c" "3000000000001" "third file must not be starved either"
+}
+
 run_tests

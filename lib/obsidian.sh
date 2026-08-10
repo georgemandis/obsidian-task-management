@@ -35,8 +35,13 @@ obs() {
     return 1
   }
 
+  # </dev/null is mandatory: fetch_enriched calls obs() from inside a
+  # `while read path; do ... done < <(process substitution)` loop. Without
+  # this redirect, the child inherits the loop's stdin and drains the
+  # process-substitution pipe on its first invocation, silently truncating
+  # the loop to one iteration — every file after the first gets no metadata.
   local rc=0
-  "$timeout_cmd" "$OBSIDIAN_TIMEOUT" "$OBSIDIAN_BIN" "$@" || rc=$?
+  "$timeout_cmd" "$OBSIDIAN_TIMEOUT" "$OBSIDIAN_BIN" "$@" </dev/null || rc=$?
   if [[ $rc -eq 124 ]]; then
     printf 'obsidian timed out after %ss. Is Obsidian running?\n' "$OBSIDIAN_TIMEOUT" >&2
     return 1
