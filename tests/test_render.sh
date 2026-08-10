@@ -55,4 +55,37 @@ test_exactly_fourteen_days_before_is_last_week() {
   assert_eq "$(bucket_of 1785038400000)" "Last week" "exact 14-day boundary is Last week"
 }
 
+FIXTURES="$DIR/fixtures"
+
+test_normalize_builds_ref_from_file_and_line() {
+  local got
+  got="$(normalize_tasks < "$FIXTURES/tasks.json" | jq -r '.[0].ref')"
+  assert_eq "$got" "Audit/09 Week-One Action List.md:20" "ref joins file and line"
+}
+
+test_normalize_strips_todo_checkbox_prefix() {
+  local got
+  got="$(normalize_tasks < "$FIXTURES/tasks.json" | jq -r '.[0].text')"
+  assert_eq "$got" "Follow-up norm: funnel changes must update the spec test" \
+    "prefix stripped, inner colon preserved"
+}
+
+test_normalize_strips_done_checkbox_prefix() {
+  local got
+  got="$(normalize_tasks < "$FIXTURES/tasks.json" | jq -r '.[1].text')"
+  assert_eq "$got" "Ship the audit doc" "done prefix stripped"
+}
+
+test_normalize_preserves_status() {
+  local got
+  got="$(normalize_tasks < "$FIXTURES/tasks.json" | jq -r '.[1].status')"
+  assert_eq "$got" "x" "status preserved"
+}
+
+test_normalize_keeps_all_records() {
+  local got
+  got="$(normalize_tasks < "$FIXTURES/tasks.json" | jq -r 'length')"
+  assert_eq "$got" "3" "no records dropped"
+}
+
 run_tests

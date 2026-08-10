@@ -1,0 +1,20 @@
+[
+  {
+    "status": " ",
+    "text": "- [ ] Follow-up norm: funnel changes must update the spec test",
+    "file": "Audit/09 Week-One Action List.md",
+    "line": "20"
+  },
+  {
+    "status": "x",
+    "text": "- [x] Ship the audit doc",
+    "file": "Audit/09 Week-One Action List.md",
+    "line": "24"
+  },
+  {
+    "status": " ",
+    "text": "- [ ] Ask about staging deploy",
+    "file": "Meetings/Standup.md",
+    "line": "7"
+  }
+]

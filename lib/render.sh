@@ -22,3 +22,12 @@ def bucket(ms):
     else "Older" end;
 JQ
 }
+
+# stdin: raw `obsidian tasks format=json`
+# stdout: same records plus `ref`, with the checkbox prefix stripped from `text`.
+normalize_tasks() {
+  jq '[ .[] | . + {
+        ref: "\(.file):\(.line)",
+        text: (.text | sub("^\\s*-\\s*\\[.\\]\\s*"; ""))
+      } ]'
+}
