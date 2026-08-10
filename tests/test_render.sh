@@ -150,4 +150,26 @@ test_picker_shows_filename_for_searching() {
   assert_contains "$got" "Audit/09 Week-One Action List.md" "filename visible for search"
 }
 
+test_render_by_date_survives_null_timestamps() {
+  local e got
+  e='[{"status":" ","text":"good","file":"A.md","line":"1","ref":"A.md:1","created":"1786290000000","modified":"1786290000000"},
+      {"status":" ","text":"degraded","file":"B.md","line":"2","ref":"B.md:2","created":null,"modified":null}]'
+  got="$(printf '%s' "$e" | OBSIDIAN_TASKS_NOW=1786248000 render_by_date modified "" 2>&1)"
+  assert_contains "$got" "good" "a null timestamp must not erase healthy tasks"
+}
+
+test_render_picker_survives_null_timestamps() {
+  local e got
+  e='[{"status":" ","text":"degraded","file":"B.md","line":"2","ref":"B.md:2","created":null,"modified":null}]'
+  got="$(printf '%s' "$e" | OBSIDIAN_TASKS_NOW=1786248000 render_picker modified 2>&1)"
+  assert_contains "$got" "B.md:2" "picker must still emit a row with an unknown timestamp"
+}
+
+test_since_boundary_matches_bucket_boundary() {
+  local e got
+  e='[{"status":" ","text":"exactly seven","file":"A.md","line":"1","ref":"A.md:1","created":"1785643200000","modified":"1785643200000"}]'
+  got="$(printf '%s' "$e" | OBSIDIAN_TASKS_NOW=1786248000 render_by_date modified 7)"
+  assert_contains "$got" "exactly seven" "a task exactly 7 days old must survive --since 7d"
+}
+
 run_tests

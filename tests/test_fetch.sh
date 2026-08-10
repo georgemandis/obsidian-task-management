@@ -3,6 +3,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DIR/helpers.sh"
 source "$DIR/../lib/render.sh"
+source "$DIR/../lib/obsidian.sh"
 source "$DIR/../lib/fetch.sh"
 FIXTURES="$DIR/fixtures"
 
@@ -53,6 +54,18 @@ test_parse_meta_escapes_backslash_in_path() {
   local got
   got="$(printf 'path\tFoo\\Bar.md\ncreated\t123\nmodified\t456\n' | parse_file_meta | jq -r '.path')"
   assert_eq "$got" 'Foo\Bar.md' "backslash in filename survives round-trip through jq"
+}
+
+test_fetch_enriched_fails_loudly_when_tasks_call_fails() {
+  local stub rc
+  stub="$(mktemp)"
+  printf '#!/usr/bin/env bash\necho "Error: no vault focused" >&2\nexit 1\n' > "$stub"
+  chmod +x "$stub"
+  set +e
+  OBSIDIAN_BIN="$stub" fetch_enriched 0 >/dev/null 2>&1; rc=$?
+  set -e
+  rm -f "$stub"
+  assert_eq "$rc" "1" "a failed tasks call must not look like an empty vault"
 }
 
 run_tests

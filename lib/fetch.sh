@@ -28,12 +28,17 @@ join_metadata() {
 
 # $1 = 1 to include completed tasks, else 0
 fetch_enriched() {
-  local all="${1:-0}" tasks meta_file path
+  local all="${1:-0}" tasks meta_file path rc=0
 
   if [[ "$all" == "1" ]]; then
-    tasks="$(obs tasks format=json)"
+    tasks="$(obs tasks format=json)" || rc=$?
   else
-    tasks="$(obs tasks todo format=json)"
+    tasks="$(obs tasks todo format=json)" || rc=$?
+  fi
+
+  if [[ $rc -ne 0 ]]; then
+    printf 'Failed to list tasks (obsidian exited %s). Is Obsidian running with a vault focused?\n' "$rc" >&2
+    return 1
   fi
 
   # An empty vault yields no tasks; emit an empty array rather than failing.
@@ -49,11 +54,17 @@ fetch_enriched() {
 
   {
     printf '['
-    local first=1
+    local first=1 out file_rc
     while IFS= read -r path; do
       [[ $first -eq 0 ]] && printf ','
       first=0
-      obs file path="$path" | parse_file_meta
+      out="$(obs file path="$path")" && file_rc=0 || file_rc=$?
+      if [[ $file_rc -ne 0 ]]; then
+        printf '{"path":"","created":"","modified":""}'
+        printf 'Warning: could not read metadata for %s\n' "$path" >&2
+      else
+        printf '%s' "$out" | parse_file_meta
+      fi
     done < <(jq -r '[.[].file] | unique | .[]' <<< "$tasks")
     printf ']'
   } > "$meta_file"
