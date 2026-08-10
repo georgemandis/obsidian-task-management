@@ -1,3 +1,4 @@
 gm_*.json
 gm_*.tsv
 .DS_Store
+.superpowers/
