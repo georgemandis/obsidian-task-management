@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+: "${OBSIDIAN_BIN:=obsidian}"
+: "${OBSIDIAN_TIMEOUT:=25}"
+
+# macOS has no /usr/bin/timeout; coreutils installs it as timeout or gtimeout.
+# Resolved lazily (not at source time) so tests can stub PATH per-case.
+_obs_timeout_cmd() {
+  if command -v timeout >/dev/null 2>&1; then printf 'timeout'
+  elif command -v gtimeout >/dev/null 2>&1; then printf 'gtimeout'
+  else return 1; fi
+}
+
+# Every CLI call goes through here. The CLI hangs rather than failing when it
+# cannot complete, so the timeout is mandatory.
+obs() {
+  # Dry-run is enforced here, at the chokepoint, so no caller can bypass it by
+  # reaching for obs() directly instead of obs_task_write().
+  if [[ "${OBSIDIAN_TASKS_DRY_RUN:-}" == "1" && "${1:-}" == "task" ]]; then
+    local a verb mutating=0
+    for a in "$@"; do
+      # tr, not ${a,,}: macOS ships bash 3.2, where ${a,,} is a syntax error.
+      verb="$(printf '%s' "$a" | tr '[:upper:]' '[:lower:]')"
+      case "$verb" in toggle|done|todo|status=*) mutating=1 ;; esac
+    done
+    if [[ $mutating -eq 1 ]]; then
+      printf 'DRY RUN: obsidian %s\n' "$*"
+      return 0
+    fi
+  fi
+
+  local timeout_cmd
+  timeout_cmd="$(_obs_timeout_cmd)" || {
+    printf "Requires 'timeout' (brew install coreutils).\n" >&2
+    return 1
+  }
+
+  # </dev/null is mandatory: fetch_enriched calls obs() from inside a
+  # `while read path; do ... done < <(process substitution)` loop. Without
+  # this redirect, the child inherits the loop's stdin and drains the
+  # process-substitution pipe on its first invocation, silently truncating
+  # the loop to one iteration — every file after the first gets no metadata.
+  local rc=0
+  "$timeout_cmd" "$OBSIDIAN_TIMEOUT" "$OBSIDIAN_BIN" "$@" </dev/null || rc=$?
+  if [[ $rc -eq 124 ]]; then
+    printf 'obsidian timed out after %ss. Is Obsidian running?\n' "$OBSIDIAN_TIMEOUT" >&2
+    return 1
+  fi
+  return $rc
+}
+
+ref_file() { printf '%s' "${1%:*}"; }
+ref_line() { printf '%s' "${1##*:}"; }
+
+# $1 = ref (path:line), $2 = verb (toggle|done|todo)
+obs_task_write() {
+  local ref="$1" verb="$2" out rc=0
+
+  if [[ "${OBSIDIAN_TASKS_DRY_RUN:-}" == "1" ]]; then
+    printf 'DRY RUN: obsidian task ref=%s %s\n' "$ref" "$verb"
+    return 0
+  fi
+
+  out="$(obs task ref="$ref" "$verb" 2>&1)" || rc=$?
+
+  # A ref valid in one vault silently fails in another; surface that clearly.
+  # Only consider this classification when the call actually failed.
+  if [[ $rc -ne 0 && "$out" == *"not found"* ]]; then
+    printf 'Could not resolve %s — is the expected vault focused?\n  %s\n' "$ref" "$out" >&2
+    return 1
+  fi
+
+  if [[ -n "$out" ]]; then
+    if [[ $rc -ne 0 ]]; then printf '%s\n' "$out" >&2; else printf '%s\n' "$out"; fi
+  fi
+  return $rc
+}
