@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve symlinks so the tool works when linked onto PATH. macOS has no
+# readlink -f, so walk the links manually.
+_src="${BASH_SOURCE[0]}"
+while [ -L "$_src" ]; do
+  _dir="$(cd -P "$(dirname "$_src")" && pwd)"
+  _src="$(readlink "$_src")"
+  [ "${_src#/}" = "$_src" ] && _src="$_dir/$_src"   # relative link -> absolute
+done
+ROOT="$(cd -P "$(dirname "$_src")/.." && pwd)"
 source "$ROOT/lib/obsidian.sh"
 source "$ROOT/lib/render.sh"
 source "$ROOT/lib/fetch.sh"

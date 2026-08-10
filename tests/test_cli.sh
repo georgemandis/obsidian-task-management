@@ -98,4 +98,41 @@ test_by_file_rejects_since_option() {
   assert_contains "$out" "Unknown option" "by-file does not understand --since"
 }
 
+# --- Symlink regression: bin/obsidian-tasks derives ROOT from
+# ${BASH_SOURCE[0]}, which is the symlink's own path if not resolved. The
+# intended install method is `ln -s .../bin/obsidian-tasks ~/.local/bin/...`,
+# so invoking through a symlink (including a chain of symlinks) must not
+# break the lib/*.sh sourcing.
+
+test_direct_invocation_via_symlink_finds_libs() {
+  local tmp out rc=0
+  tmp="$(mktemp -d)"
+  ln -s "$CLI" "$tmp/obsidian-tasks"
+
+  out="$("$tmp/obsidian-tasks" --help 2>&1)" || rc=$?
+  rm -rf "$tmp"
+
+  assert_eq "$rc" "0" "invocation through a symlink succeeds"
+  assert_contains "$out" "by-date" "help output shown through symlink"
+  if [[ "$out" == *"No such file or directory"* ]]; then
+    fail "sourcing lib/*.sh failed through symlink: $out"
+  fi
+}
+
+test_chained_symlink_finds_libs() {
+  local tmp out rc=0
+  tmp="$(mktemp -d)"
+  ln -s "$CLI" "$tmp/link1"
+  ln -s "$tmp/link1" "$tmp/link2"
+
+  out="$("$tmp/link2" --help 2>&1)" || rc=$?
+  rm -rf "$tmp"
+
+  assert_eq "$rc" "0" "invocation through a chained symlink succeeds"
+  assert_contains "$out" "by-date" "help output shown through chained symlink"
+  if [[ "$out" == *"No such file or directory"* ]]; then
+    fail "sourcing lib/*.sh failed through chained symlink: $out"
+  fi
+}
+
 run_tests
