@@ -28,8 +28,15 @@ JQ
 normalize_tasks() {
   jq '[ .[] | . + {
         ref: "\(.file):\(.line)",
+        raw: .text,
         text: (.text | sub("^\\s*-\\s*\\[.\\]\\s*"; ""))
       } ]'
+}
+
+# stdin: normalized tasks; stdout: the `obsidian tasks verbose` layout —
+# a file path, then one "line<TAB>raw line" per task, then a blank line.
+render_by_file() {
+  jq -r 'group_by(.file) | .[] | .[0].file, (.[] | "\(.line)\t\(.raw)"), ""'
 }
 
 # Tests override the clock via OBSIDIAN_TASKS_NOW.

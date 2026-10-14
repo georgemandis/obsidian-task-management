@@ -13,6 +13,7 @@ ROOT="$(cd -P "$(dirname "$_src")/.." && pwd)"
 source "$ROOT/lib/obsidian.sh"
 source "$ROOT/lib/render.sh"
 source "$ROOT/lib/fetch.sh"
+source "$ROOT/lib/cleanup.sh"
 
 usage() {
   cat <<'EOF'
@@ -23,11 +24,22 @@ Usage:
   obsidian-tasks by-file [--all]
   obsidian-tasks pick    [--created] [--all] [--since <n>d]
   obsidian-tasks toggle <ref> [--done|--todo]
+  obsidian-tasks clean-up [--older-than <n>d] [--dry-run]
 
 Options:
   --created      Group by file creation date instead of modification date
   --all          Include completed tasks (default: open tasks only)
   --since <n>d   Only files touched within the last n days
+  --older-than <n>d  clean-up: only notes whose filename date is older than n days (default 7)
+  --dry-run      clean-up: print what would change, change nothing
+
+clean-up removes two kinds of noise from dated notes older than the window:
+  - empty checkboxes left by templates ("- [ ]" with no text) are deleted;
+  - past meetings on a daily note's agenda ("- [ ] 11:30 – 12:00 [[...]]") are ticked.
+Notes with no YYYY-MM-DD in their path are never touched.
+
+Listings skip paths in <vault>/.obsidian-tasks-ignore (one prefix per line,
+# comments); without that file, _/Templates/ is skipped.
 
 Environment:
   OBSIDIAN_TASKS_DRY_RUN=1   Print write commands instead of running them
@@ -83,7 +95,38 @@ case "$cmd" in
         *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
       esac
     done
-    if [[ "$all" == "1" ]]; then obs tasks verbose; else obs tasks todo verbose; fi
+    tasks="$(fetch_tasks "$all")" || exit 1
+    printf '%s' "$tasks" | filter_ignored | render_by_file
+    ;;
+
+  clean-up)
+    older=7; dry=0
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --older-than)
+          if [[ -z "${2:-}" ]]; then
+            printf -- '--older-than requires a value, e.g. --older-than 7d\n' >&2; exit 1
+          fi
+          older="${2%d}"
+          if [[ ! "$older" =~ ^[0-9]+$ ]]; then
+            printf -- '--older-than expects a number of days, e.g. 7d (got: %s)\n' "$2" >&2; exit 1
+          fi
+          shift 2 ;;
+        --dry-run) dry=1; shift ;;
+        *) printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
+      esac
+    done
+    [[ $dry -eq 1 ]] && export OBSIDIAN_TASKS_DRY_RUN=1
+    cutoff="$(cleanup_cutoff "$older")"
+    tasks="$(fetch_tasks 0)" || exit 1
+    plan="$(printf '%s' "$tasks" | filter_ignored | cleanup_plan "$cutoff")"
+    if [[ -z "$plan" ]]; then
+      printf 'Nothing to clean up (dated notes older than %s).\n' "$cutoff"; exit 0
+    fi
+    printf 'Cutoff %s: %s empty checkbox(es) to delete, %s past agenda line(s) to tick.\n' \
+      "$cutoff" "$(printf '%s\n' "$plan" | grep -c '^delete-empty')" \
+      "$(printf '%s\n' "$plan" | grep -c '^done-agenda')"
+    printf '%s\n' "$plan" | cleanup_apply
     ;;
 
   toggle)

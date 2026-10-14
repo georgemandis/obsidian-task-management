@@ -37,6 +37,26 @@ fzf was enough and a TUI would be ceremony.
 The hypothesis when designing was yes. If it turns out you always type it, make it
 the default and add a `--all-time` escape hatch instead.
 
+## Added since (2026-10-14): `clean-up` and an ignore list
+
+Two months of daily use answered one question nobody asked at build time: the
+open-task count is dominated by things that were never tasks. Template residue
+(an empty `- [ ]` under "Action items" in every meeting note), the daily agenda
+lines for meetings long past, and checkboxes inside bulk-imported content (a
+support-chat export) made `by-file` unreadable at ~1,100 "open" tasks, of which
+roughly a hundred were noise and several hundred more were August entries already
+consolidated elsewhere.
+
+`clean-up` handles the deterministic part: delete empty boxes and tick past agenda
+lines, but only in dated notes older than a grace window, because the current week's
+empty box is a placeholder someone may still fill. `.obsidian-tasks-ignore` keeps
+template and import folders out of every listing. `by-file` now renders from the
+same JSON as the other commands so the ignore list applies uniformly; its output
+layout is unchanged.
+
+Deliberately not built: anything that decides a *real* task is stale. That is
+judgement, and it stays with the person (or the weekly triage) rather than the tool.
+
 ## Candidate next steps
 
 Roughly in order of expected value. None is scheduled.

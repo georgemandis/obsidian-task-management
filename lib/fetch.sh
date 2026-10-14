@@ -27,8 +27,10 @@ join_metadata() {
 }
 
 # $1 = 1 to include completed tasks, else 0
-fetch_enriched() {
-  local all="${1:-0}" tasks meta_file path rc=0
+# stdout: normalized task JSON (ref + stripped text + raw line), no file metadata.
+# Cheaper than fetch_enriched: one CLI call, no per-file lookups.
+fetch_tasks() {
+  local all="${1:-0}" tasks rc=0
 
   if [[ "$all" == "1" ]]; then
     tasks="$(obs tasks format=json)" || rc=$?
@@ -47,7 +49,18 @@ fetch_enriched() {
     return 0
   fi
 
-  tasks="$(printf '%s' "$tasks" | normalize_tasks)"
+  printf '%s' "$tasks" | normalize_tasks
+}
+
+# $1 = 1 to include completed tasks, else 0
+fetch_enriched() {
+  local all="${1:-0}" tasks meta_file path
+
+  tasks="$(fetch_tasks "$all")" || return 1
+  if [[ "$(jq -r 'length' <<< "$tasks")" == "0" ]]; then
+    printf '[]\n'
+    return 0
+  fi
 
   meta_file="$(mktemp)"
   trap 'rm -f "$meta_file"' RETURN

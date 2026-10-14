@@ -285,8 +285,12 @@ test_picker_skips_stale_ref_without_toggling() {
 #!/usr/bin/env bash
 case "$*" in
   "tasks todo format=json")
-    printf '[{"status":" ","text":"- [ ] Chase the invoice NOW",\
-"file":"Audit/09 Week-One Action List.md","line":"21"}]'
+    # One line: a backslash-newline inside single quotes is literal, and the
+    # resulting "\<newline>" made this JSON invalid. The test used to pass only
+    # because the jq failure left the fresh list empty, which also reads as a
+    # skip. Keep the fixture valid so the intended path (ref :20 vanished,
+    # the task now lives at :21) is what gets exercised.
+    printf '[{"status":" ","text":"- [ ] Chase the invoice NOW","file":"Audit/09 Week-One Action List.md","line":"21"}]'
     ;;
   "file path=Audit/09 Week-One Action List.md")
     printf 'path\tAudit/09 Week-One Action List.md\ncreated\t1765157522206\nmodified\t1786290000000\n'

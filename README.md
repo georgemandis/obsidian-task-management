@@ -43,7 +43,27 @@ obsidian-tasks pick                 # fuzzy-select tasks and toggle them
 obsidian-tasks pick --since 7d      # ...narrowed to this week
 obsidian-tasks toggle "Notes/Standup.md:7"
 obsidian-tasks toggle "Notes/Standup.md:7" --done
+
+obsidian-tasks clean-up                  # delete empty boxes, tick past agenda lines (notes older than 7d)
+obsidian-tasks clean-up --older-than 14d --dry-run
 ```
+
+### Cleaning up noise
+
+Two kinds of checkbox are never tasks and only accumulate: the empty `- [ ]` a
+template leaves under "Action items", and the agenda lines a daily note carries for
+meetings that have since happened (`- [ ] 11:30 – 12:00 [[Standup]]`). `clean-up`
+deletes the first and ticks the second, in notes whose filename carries a
+`YYYY-MM-DD` older than the window (`--older-than`, default 7 days), so the current
+week is left alone and a note with no date in its path is never touched. Deletion
+re-checks each line is still empty before removing it; `--dry-run` (or
+`OBSIDIAN_TASKS_DRY_RUN=1`) prints the plan and changes nothing.
+
+### Ignoring folders
+
+Listings and `clean-up` skip any task whose path starts with a prefix in
+`<vault>/.obsidian-tasks-ignore` (one per line, `#` comments). Without that file,
+`_/Templates/` is skipped. `OBSIDIAN_TASKS_IGNORE_FILE` points at a list elsewhere.
 
 Date buckets are Today, Yesterday, This week (2–7 days), Last week (8–14 days),
 and Older, measured from local midnight. Boundaries are inclusive at 1, 7, and 14
